@@ -71,29 +71,39 @@ done
 echo
 
 # ---------------------------------------------------------------------------
-# 4. npm-link the unpublished moq-transport into the prebuilt client.
+# 4. npm-link the unpublished moq-transport + the local voice-ui-kit into
+#    the prebuilt client.
 #
 # TEMPORARY: remove this block once `@pipecat-ai/moq-transport` is published
-# and the prebuilt client depends on it normally.
+# and voice-ui-kit's next release (with MoQ support) is on npm.
 #
-# Two link chains are set up:
+# Link chains:
 #   a) @pipecat-ai/moq-transport (source: pipecat-client-web-transports/transports/moq-transport)
 #      -> consumed by pipecat-prebuilt/client
-#   b) @pipecat-ai/client-js (source: pipecat-prebuilt/client's installed copy at 1.8.x)
-#      -> linked into pipecat-client-web-transports so the linked moq-transport
-#         resolves the same Transport class as the consumer (without this,
-#         moq-transport picks up client-js@1.10.x from the monorepo and tsc
-#         rejects the assignment with "Property '_options' is protected").
+#   b) @pipecat-ai/voice-ui-kit  (source: voice-ui-kit/package)
+#      -> consumed by pipecat-prebuilt/client (replaces the npm-installed
+#         release with the local build that knows about transportType="moq")
+#   c) @pipecat-ai/client-js     (source: pipecat-prebuilt/client's installed
+#      copy at 1.8.x) -> linked into both pipecat-client-web-transports and
+#      voice-ui-kit/package so every layer in the bundle resolves the same
+#      Transport / PipecatClient class instance. Without this, voice-ui-kit's
+#      bundled dist picks up its own pnpm-resolved client-js, React context
+#      breaks across the two instances, and tsc rejects the assignment with
+#      "Property '_options' is protected".
 #
-# Prerequisites: `npm install` has been run in both
-#   pipecat-client-web-transports/ and pipecat-prebuilt/client/ already.
+# Prerequisites:
+#   - `npm install` has been run in pipecat-client-web-transports/ and
+#     pipecat-prebuilt/client/.
+#   - `pnpm install` + `pnpm -F @pipecat-ai/voice-ui-kit build` have been
+#     run in voice-ui-kit/ so dist/ exists.
 # ---------------------------------------------------------------------------
 TRANSPORTS_DIR="$PIPECAT_DIR/../pipecat-client-web-transports"
 MOQ_PKG_DIR="$TRANSPORTS_DIR/transports/moq-transport"
 PREBUILT_CLIENT_DIR="$PIPECAT_DIR/../pipecat-prebuilt/client"
 PREBUILT_CLIENT_JS_DIR="$PREBUILT_CLIENT_DIR/node_modules/@pipecat-ai/client-js"
+VUK_PKG_DIR="$PIPECAT_DIR/../voice-ui-kit/package"
 
-echo "==> Linking moq-transport into pipecat-prebuilt/client (temporary)..."
+echo "==> Linking moq-transport + voice-ui-kit into pipecat-prebuilt/client (temporary)..."
 
 if [[ ! -d "$MOQ_PKG_DIR" ]]; then
   echo "    skipped: $MOQ_PKG_DIR not found"
@@ -101,13 +111,18 @@ elif [[ ! -d "$PREBUILT_CLIENT_DIR/node_modules" ]]; then
   echo "    skipped: run 'npm install' in $PREBUILT_CLIENT_DIR first"
 elif [[ ! -d "$PREBUILT_CLIENT_JS_DIR" ]]; then
   echo "    skipped: $PREBUILT_CLIENT_JS_DIR not found (run 'npm install' in $PREBUILT_CLIENT_DIR)"
+elif [[ ! -d "$VUK_PKG_DIR/dist" ]]; then
+  echo "    skipped: $VUK_PKG_DIR/dist not found (run 'pnpm install && pnpm -F @pipecat-ai/voice-ui-kit build' in $(dirname "$VUK_PKG_DIR"))"
 else
-  ( cd "$MOQ_PKG_DIR"          && npm link >/dev/null )
-  ( cd "$PREBUILT_CLIENT_DIR"  && npm link @pipecat-ai/moq-transport >/dev/null )
-  ( cd "$PREBUILT_CLIENT_JS_DIR" && npm link >/dev/null )
-  ( cd "$TRANSPORTS_DIR"       && npm link @pipecat-ai/client-js >/dev/null )
+  ( cd "$MOQ_PKG_DIR"            && npm link >/dev/null )
+  ( cd "$VUK_PKG_DIR"             && npm link >/dev/null )
+  ( cd "$PREBUILT_CLIENT_JS_DIR"  && npm link >/dev/null )
+  ( cd "$PREBUILT_CLIENT_DIR"     && npm link @pipecat-ai/moq-transport @pipecat-ai/voice-ui-kit >/dev/null )
+  ( cd "$TRANSPORTS_DIR"          && npm link @pipecat-ai/client-js >/dev/null )
+  ( cd "$VUK_PKG_DIR"             && npm link @pipecat-ai/client-js >/dev/null )
   echo "    @pipecat-ai/moq-transport -> $MOQ_PKG_DIR"
-  echo "    @pipecat-ai/client-js     -> $PREBUILT_CLIENT_JS_DIR"
+  echo "    @pipecat-ai/voice-ui-kit  -> $VUK_PKG_DIR"
+  echo "    @pipecat-ai/client-js     -> $PREBUILT_CLIENT_JS_DIR (shared into transports + voice-ui-kit)"
 fi
 echo
 
